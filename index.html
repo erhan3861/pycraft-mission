@@ -282,13 +282,23 @@
       if (d < 1) completeTask("task1", 10);
     }
 
-    async function runPython() {
-      const pyodide = await loadPyodide();
-      pyodide.globals.set("move", move);
-      pyodide.globals.set("place", place);
-      pyodide.globals.set("detect", detect);
-      await pyodide.runPythonAsync(document.getElementById("editor").value);
-    }
+    let pyodide = null;
+
+async function runPython() {
+  if (!pyodide) {
+    pyodide = await loadPyodide();
+    pyodide.globals.set("move", move);
+    pyodide.globals.set("place", place);
+    pyodide.globals.set("detect", detect);
+  }
+  const code = document.getElementById("editor").value;
+  try {
+    await pyodide.runPythonAsync(code);
+  } catch (err) {
+    console.error(err);
+    showFloatingText("🐞 Hata: " + err.message);
+  }
+}
 
     document.getElementById("runBtn").addEventListener("click", runPython);
     function animate() {
