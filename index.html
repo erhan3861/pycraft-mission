@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>PythonCraft Geliştirilmiş</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      font-family: 'Courier New', monospace;
+      background-color: #1e1e1e;
+      color: #fff;
+    }
+    #editor {
+      position: fixed;
+      bottom: 0;
+      width: 100%;
+      height: 150px;
+      background: #111;
+      color: #0f0;
+      padding: 10px;
+      box-sizing: border-box;
+      border-top: 2px solid #333;
+      z-index: 10;
+      font-size: 14px;
+    }
+    #runBtn {
+      position: fixed;
+      bottom: 160px;
+      right: 20px;
+      padding: 10px 20px;
+      background-color: #28a745;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+      z-index: 10;
+    }
+    #runBtn:hover { background-color: #218838; }
+    #scoreBoard {
+      position: fixed;
+      top: 10px;
+      left: 220px;
+      background: rgba(0,0,0,0.7);
+      padding: 10px;
+      border-radius: 8px;
+      z-index: 10;
+      font-size: 16px;
+    }
+    #cameraBtns, #taskList, #guide {
+      position: fixed;
+      top: 10px;
+      z-index: 10;
+      background: rgba(0, 0, 0, 0.75);
+      padding: 12px;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    }
+    #cameraBtns { left: 500px; }
+    #taskList { left: 20px; max-width: 180px; }
+    #guide { right: 10px; font-size: 14px; }
+    button {
+      background-color: #444;
+      color: white;
+      border: none;
+      padding: 6px 10px;
+      margin: 4px 2px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    button:hover { background-color: #666; }
+    li.checked {
+      text-decoration: line-through;
+      color: #aaa;
+    }
+    ul { list-style: none; padding-left: 0; }
+    li { cursor: pointer; margin-bottom: 6px; }
+    .floating-text {
+      position: absolute;
+      color: yellow;
+      font-size: 20px;
+      animation: floatUp 1s ease-out forwards;
+    }
+    @keyframes floatUp {
+      0% { opacity: 1; transform: translateY(0); }
+      100% { opacity: 0; transform: translateY(-50px); }
+    }
+  </style>
+</head>
+<body>
+  <textarea id="editor"># Python kodu yaz</textarea>
+  <button id="runBtn">▶ Çalıştır</button>
+  <div id="cameraBtns">
+    <button onclick="setView('first')">👁️ 1.Şahıs</button>
+    <button onclick="setView('third')">🎥 3.Şahıs</button>
+    <button onclick="setView('top')">🗺️ Kuş Bakışı</button>
+  </div>
+  <div id="taskList">
+    <h4>🎯 Görevler</h4>
+    <ul>
+      <li id="task1">🟥 Kırmızı bloğa git</li>
+      <li id="task2">🌳 Ağaç dik</li>
+    </ul>
+  </div>
+  <div id="guide">
+    <h4>🧾 Komutlar</h4>
+    <ul>
+      <li>🚶 move("forward")</li>
+      <li>🧱 place("block")</li>
+      <li>🌳 place("tree")</li>
+      <li>🪨 place("stone")</li>
+      <li>💧 place("water")</li>
+      <li>⛏️ remove(x, y, z)</li>
+      <li>🔍 detect()</li>
+    </ul>
+  </div>
+  <div id="scoreBoard">Puan: <span id="score">0</span></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
+  <script>
+    let scene, camera, renderer, robot, score = 0;
+    let cameraMode = 'third';
+
+    init(); animate();
+
+    function init() {
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x87ceeb);
+      camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      const ambient = new THREE.AmbientLight(0x606060);
+      scene.add(ambient);
+      const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+      dirLight.position.set(10, 15, 10);
+      scene.add(dirLight);
+
+      const ground = new THREE.Mesh(
+        new THREE.PlaneGeometry(100, 100),
+        new THREE.MeshStandardMaterial({ color: 0x228B22 })
+      );
+      ground.rotation.x = -Math.PI / 2;
+      scene.add(ground);
+
+      const grid = new THREE.GridHelper(100, 100);
+      scene.add(grid);
+
+      const mat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa });
+      robot = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.BoxGeometry(1, 1.5, 1), mat);
+      const head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), mat);
+      head.position.y = 1.2;
+      robot.add(body); robot.add(head);
+      robot.position.y = 0.75;
+      scene.add(robot);
+
+      const redBox = new THREE.Mesh(
+        new THREE.BoxGeometry(2,2,2),
+        new THREE.MeshStandardMaterial({ color: 0xff0000 })
+      );
+      redBox.position.set(5, 0.5, -5);
+      redBox.name = "target";
+      scene.add(redBox);
+      window.addEventListener("keydown", onKeyDown);
+    }
+
+    function setView(mode) { cameraMode = mode; }
+    function updateCamera() {
+      const pos = robot.position.clone();
+      if (cameraMode === 'first') {
+        camera.position.copy(pos).add(new THREE.Vector3(0, 1.2, 0));
+        camera.lookAt(pos.clone().add(new THREE.Vector3(0, 1.2, -1)));
+      } else if (cameraMode === 'third') {
+        camera.position.copy(pos).add(new THREE.Vector3(0, 3, 5));
+        camera.lookAt(pos);
+      } else if (cameraMode === 'top') {
+        camera.position.copy(pos).add(new THREE.Vector3(0, 20, 0));
+        camera.lookAt(pos);
+      }
+    }
+
+    function move(dir) {
+      const dirs = {
+        forward: [0, 0, -1], back: [0, 0, 1],
+        left: [-1, 0, 0], right: [1, 0, 0]
+      };
+      const v = new THREE.Vector3(...(dirs[dir] || [0,0,0]));
+      robot.position.add(v);
+      checkTasks();
+    }
+
+    function place(type) {
+      const pos = robot.position.clone().add(new THREE.Vector3(0, 0.5, -2));
+      let color = 0xffff00;
+      if (type === "tree") {
+        const trunk = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1, 0.5), new THREE.MeshStandardMaterial({ color: 0x8B4513 }));
+        trunk.position.copy(pos);
+        const leaves = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.5, 1.5), new THREE.MeshStandardMaterial({ color: 0x00ff00 }));
+        leaves.position.copy(pos).add(new THREE.Vector3(0, 1.25, 0));
+        scene.add(trunk); scene.add(leaves);
+        completeTask("task2", 10);
+        return;
+      } else if (type === "stone") color = 0x808080;
+      else if (type === "water") color = 0x0000ff;
+      const block = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), new THREE.MeshStandardMaterial({ color }));
+      block.position.copy(pos);
+      scene.add(block);
+    }
+
+    function detect() {
+        // Raycaster oluştur
+    const ray = new THREE.Raycaster();
+
+    // Robotun ileri baktığı yönü al (eğimsiz hale getireceğiz)
+    const forward = new THREE.Vector3(0, 0, 1); // sadece düz Z yönü
+    forward.applyQuaternion(robot.quaternion); // robotun yönüne göre döndür
+
+    // Y yönünden eğimi sıfırla (eğim istemiyoruz)
+    forward.y = 0;
+    forward.normalize(); // tekrar birim vektör yap
+
+    // Başlangıç noktası (robotun baş hizası olabilir)
+    const start = robot.position.clone().add(new THREE.Vector3(0, 0.50, 0));
+
+    // Ray'i ayarla
+    ray.set(start, forward);
+
+    // Kontrol için
+    console.log("Ray start:", start);
+    console.log("Ray direction:", forward);
+
+        // // Görsel Ray Çizgisi
+        // const end = start.clone().add(dir.clone().multiplyScalar(5)); // 5 birim ileriye
+        // const points = [start, end];
+        // const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        // const material = new THREE.LineBasicMaterial({ color: 0xffff00 });
+        // const line = new THREE.Line(geometry, material);
+        // scene.add(line);
+
+        // Ray çizgisini 1 saniye sonra sil
+        // setTimeout(() => scene.remove(line), 1000);
+
+        // Nesne algılama
+        const intersects = ray.intersectObjects(scene.children, true);
+        if (intersects.length > 0 && intersects[0].distance < 10) {
+            const hit = intersects[0].object;
+            const name = hit.name || hit.parent?.name || "bilinmeyen";
+            console.log(intersects[0].object);
+            showFloatingText("🚩 " + name);
+        } else {
+            showFloatingText("🚫 Hiçbir şey yok");
+        }
+}
+
+
+    function showFloatingText(text) {
+      const div = document.createElement("div");
+      div.className = "floating-text";
+      div.textContent = text;
+      div.style.left = "50%";
+      div.style.top = "50%";
+      document.body.appendChild(div);
+      setTimeout(() => div.remove(), 5000);
+    }
+
+    function completeTask(id, points) {
+      const task = document.getElementById(id);
+      if (!task.classList.contains("checked")) {
+        task.classList.add("checked");
+        score += points;
+        document.getElementById("score").textContent = score;
+      }
+    }
+
+    function checkTasks() {
+      const d = robot.position.distanceTo(new THREE.Vector3(5, 0.75, -5));
+      if (d < 1) completeTask("task1", 10);
+    }
+
+    async function runPython() {
+      const pyodide = await loadPyodide();
+      pyodide.globals.set("move", move);
+      pyodide.globals.set("place", place);
+      pyodide.globals.set("detect", detect);
+      await pyodide.runPythonAsync(document.getElementById("editor").value);
+    }
+
+    document.getElementById("runBtn").addEventListener("click", runPython);
+    function animate() {
+      requestAnimationFrame(animate);
+      updateCamera();
+      renderer.render(scene, camera);
+    }
+
+
+    function onKeyDown(event) { 
+      if (event.key === "w") move("forward");
+      else if (event.key === "s") move("back");
+      else if (event.key === "a") move("left");
+      else if (event.key === "d") move("right");
+      // else if (event.key === "r") place("block");
+    }
+  </script>
+</body>
+</html>
